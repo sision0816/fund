@@ -58,7 +58,7 @@ class FundAnalysis():
         # 获取当前时间
         return time.strftime('[%Y-%m-%d %H:%M:%S]', time.localtime(time.time()))
 
-    def getFundCodesFromCsv(self):
+    def getFundCodesFromCsv(self, filename = 'fund.csv'):
         '''
         从csv文件中获取基金代码清单（可从wind或者其他财经网站导出）
         '''
@@ -244,7 +244,7 @@ def main():
     proxy = {"http": "http://110.37.84.147:8080", "https": "http://110.37.84.147:8080"}#这里需要替换成可用的代理IP
     sleep_time = 0.1
     #fundAnalysis.getFundJbgk('000001')
-    funds=fundAnalysis.getFundCodesFromCsv()
+    funds=fundAnalysis.getFundCodesFromCsv('fund.csv')
     #fundAnalysis.getFundManagers('000001')
     for fund in funds:
          try:
