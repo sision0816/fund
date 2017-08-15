@@ -11,6 +11,8 @@ import os
 import pandas as pd
 import re
 import matplotlib.pyplot as plt
+import datetime
+from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange
 
 
 class PyMySQL:
@@ -114,7 +116,7 @@ class Fund():
         '''
         table = 'fund_info'
 #        my_key = ['fund_abbr_name', 'nav', 'add_nav', 'nav_chg_rate']
-#        cols = ', '.join([str(i) for i in my_key])
+#        cols = ','.join([str(i) for i in my_key])
         sql = "select *  from %s where fund_code = %s" % (table, self.fund_code)
         try:
 #            self.info = mySQL.fetchData(sql)
@@ -128,23 +130,25 @@ class Fund():
         '''
         table = 'fund_nav'
         my_key = ['the_date', 'nav', 'add_nav', 'nav_chg_rate', 'buy_state', 'sell_state']
-        cols = ', '.join([str(i) for i in my_key])
+        cols = ','.join([str(i) for i in my_key])
         sql = "select %s  from %s where fund_code = %s" % (cols, table, self.fund_code)
         # sql = "select *  from %s where fund_code = %s" % (table, self.fund_code)
         try:
             self.nav = pd.read_sql(sql, con = mySQL.db, index_col='the_date')
+            self.nav.index = self.nav.index.str.strip()
+            self.nav[:] = self.nav[:].str.strip()
             # self.nav = self.nav[-1::]
         except  Exception as e:
             print(e)
     def BuySell(self, ):
         #
-        strategy = []
+        buy = []
+        sell = []
         totalRet = 0
         n = len(self.nav)
         i = 0
-        n1 = 4
+        n1 = 5
         n2 = 1
-        invs = []
         while i < n - n1:
             hisret1 = self.calcRet(self.nav.index[i - 1], self.nav.index[i])
             hisret2 = self.calcRet(self.nav.index[i - n1], self.nav.index[i])
@@ -155,20 +159,23 @@ class Fund():
                 while i < n - n1:
                     i += 1
                     hisret = self.calcRet(self.nav.index[i - n2], self.nav.index[i])
-                    if hisret<-0.0025:
+                    if hisret<-0.005:
                         selldate = self.nav.index[i]
                         break
-                myret = self.calcRet(buydate, selldate) 
+                myret = self.calcRet(buydate, selldate) - 0.005
                 print('***', buydate, selldate, myret)
-                invs.append([buydate, selldate, myret])
-                strategy.append({'the_date': buydate, 'nav': self.nav.loc[buydate]['nav']})
+                buy.append({'the_date': buydate, 'nav': self.nav.loc[buydate]['nav']})
+                sell.append({'the_date': selldate, 'nav': self.nav.loc[selldate]['nav']})
                 totalRet += myret
             else:
                 i += 1
         print('Total: ', totalRet)
-        self.strategy = pd.DataFrame(strategy)
-        self.strategy.set_index('the_date', inplace = True)
-        print(self.strategy)
+        self.buy = pd.DataFrame(buy)
+        self.buy.set_index('the_date', inplace = True)
+        self.sell = pd.DataFrame(sell)
+        self.sell.set_index('the_date', inplace = True)
+        print(self.buy)
+        print(self.sell)
         return totalRet;
     def calcRet(self, begin, end):
         # calc the return
@@ -192,11 +199,23 @@ class Fund():
         print('\n\n')
         # self.printNav(5)
     def plotNav(self, ):
-        # %matplotlib inline
-        # self.nav['nav'].plot(grid=True).axhline(y = 1, color = "black", lw = 2)
-        self.strategy['nav'].plot()
+        import datetime
+        from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange
+        fig, ax = plt.subplots()
+        ax.plot_date(self.nav.index, self.nav['nav'], '-')
+        ax.set_xlim(pd.Timestamp(self.nav.index[0]), pd.Timestamp(self.nav.index[-1]))
+        ax.plot_date(self.buy.index, self.buy['nav'], 'rs')
         plt.show()
         return 0    
+    def plotStrategy(self, ):
+        fig, ax = plt.subplots()
+        ax.plot_date(self.nav.index, self.nav['nav'], '-')
+        ax.set_xlim(pd.Timestamp(self.nav.index[0]), pd.Timestamp(self.nav.index[100]))
+        ax.plot_date(self.buy.index, self.buy['nav'], 'gs')
+        ax.plot_date(self.sell.index, self.sell['nav'], 'rs')
+        plt.show()
+        return 0  
+
     def printNav(self, ndays):
         # Define the new names of your columns
         print('净值日期    单位净值    累计净值    日增长率    申购状态    赎回状态')
@@ -213,14 +232,15 @@ def main():
     global mySQL
     mySQL = PyMySQL()
     mySQL._init_('localhost', 'root', 'wangxing', 'fund')
-    myfund=Fund(fund_code = '003299')
+    myfund=Fund(fund_code = '000001')
     myfund.getFundInfo()
     myfund.getFundNav()
     myfund.printFundInfo()
-    print(myfund.calcRet(' 2016-12-29', ' 2017-08-09'))
-    ret = myfund.BuySell()
-    print(ret)
-    myfund.plotNav()
+    print(myfund.calcRet('2016-12-29', '2017-08-09'))
+    # ret = myfund.BuySell()
+    # print(ret)
+    # myfund.plotNav()
+    # myfund.plotStrategy()
 
 
 

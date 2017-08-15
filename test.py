@@ -1,22 +1,19 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Aug 10 16:56:21 2017
-
-@author: xing
-"""
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-s = pd.Series([1, 2, 3, 5, 8])
-print(s)
 
-datas = pd.date_range('20170701', periods = 6)
-print(datas)
+# Create a random time series with values over 100 days
+# starting from 1st March.
+N = 100
+dates = pd.date_range(start='2015-03-01', periods=N, freq='D')
+ts = pd.DataFrame({'date': dates,
+                   'values': np.random.randn(N)}).set_index('date')
 
-df = pd.DataFrame(np.random.randn(6, 4), index=datas, columns=list('ABCD'))
-print(df)
-
-
-
+# Create the plot and adjust x/y limits. The new x-axis
+# ranges from mid-February till 1st July.
+ax = ts.plot()
+ts[0:30:10].plot(ax = ax)
+# ax.set_xlim(pd.Timestamp('2015-02-15'), pd.Timestamp('2015-07-01'))
+ax.set_ylim(-5, 5)
+plt.show()

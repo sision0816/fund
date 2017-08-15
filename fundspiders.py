@@ -1,14 +1,9 @@
-#!/usr/bin/evn python
 # -*- coding:utf-8 -*-
 ############################################################################
 '''
-# 程序：东方财富网基金数据爬取
 # 功能：抓取东方财富网上基金相关数据
-# 创建时间：2017/02/14 基金概况数据
-# 更新历史：2017/02/15 增加基金净值数据
-#
 # 使用库：requests、BeautifulSoup4、pymysql,pandas
-# 作者：yuzhucu
+# 作者：Xing Wang
 '''
 #############################################################################
 import requests
@@ -114,8 +109,8 @@ class PyMySQL:
         # print(my_dict)
         try:
             #self.db.set_character_set('utf8')
-            cols = ', '.join(my_dict.keys())
-            values = '"," '.join([str(i) for i in my_dict.values()])
+            cols = ','.join(my_dict.keys())
+            values = '","'.join([str(i) for i in my_dict.values()])
             sql = "replace into %s (%s) values (%s)" % (table, cols, '"' + values + '"')
             #print (sql)
             try:
@@ -136,18 +131,46 @@ class PyMySQL:
         except Exception as e:
             print (self.getCurrentTime(), u"MySQLdb Error: %s" % (e))
             return 0
+        # Check data exist
+    def checkData(self, table, fund_code, date):
+        try:
+            sql = "select * from %s where fund_code = %s and the_date = '%s'" % (table, fund_code, date)
+            #print (sql)
+            try:
+                # Execute the SQL command
+                self.cur.execute(sql)
+                # Fetch all the rows in a list of lists.
+                result = self.cur.fetchall()
+                # 判断是否执行成功
+                if result:
+                    #print (self.getCurrentTime(), u"Data Insert Sucess")
+                    return True
+                else:
+                    return False
+            except Exception as e:
+                # 发生错误时回滚
+                self.db.rollback()
+                print (self.getCurrentTime(), u"Data Check Failed: %s" % (e))
+                return 0
+        except Exception as e:
+            print (self.getCurrentTime(), u"MySQLdb Error: %s" % (e))
+            return 0
 
 class FundSpiders():
+    def __init__(self, mySQL):
+        self.mySQL = mySQL
+        # self.header = header
+        pass
 
     def getCurrentTime(self):
         # 获取当前时间
         return time.strftime('[%Y-%m-%d %H:%M:%S]', time.localtime(time.time()))
 
-    def getFundCodesFromCsv(self):
+    def getFundCodesFromCsv(self, filename):
         '''
         从csv文件中获取基金代码清单（可从wind或者其他财经网站导出）
         '''
-        file_path=os.path.join(os.getcwd(),'fundlist.csv')
+        file_path=os.path.join(os.getcwd(), filename)
         fund_code = pd.read_csv(filepath_or_buffer=file_path, dtype=str, encoding='gbk')
         Code=fund_code.trade_code
         print(Code)
@@ -196,7 +219,7 @@ class FundSpiders():
             print (self.getCurrentTime(), fund_code,fund_url,e )
 
         try:
-            mySQL.insertData('fund_info', result)
+            self.mySQL.insertData('fund_info', result)
             #print (self.getCurrentTime(),'Fund Info Insert Sucess:', result['fund_code'],result['fund_name'],result['fund_abbr_name'],result['fund_manager'],result['funder'],result['establish_date'],result['establish_scale'],result['benchmark'] )
         except  Exception as e:
             print (self.getCurrentTime(), fund_code,fund_url,e )
@@ -246,7 +269,7 @@ class FundSpiders():
                      print (self.getCurrentTime(),'getFundManagers1', fund_code,fund_url,e )
 
                 try:
-                    mySQL.insertData('fund_managers_chg', result)
+                    self.mySQL.insertData('fund_managers_chg', result)
                     print (self.getCurrentTime(),'fund_managers_chg:',result['fund_code'],i,result['start_date'],result['end_date'],result['fund_managers'],result['term'],result['return_rate'] )
                 except  Exception as e:
                     print (self.getCurrentTime(),'getFundManagers2', fund_code,fund_url,e )
@@ -265,7 +288,7 @@ class FundSpiders():
                             print (self.getCurrentTime(),'getFundManagers3', fund_code,manager['manager_name'],manager['url'],fund_url,e )
 
                         try:
-                            mySQL.insertData('fund_managers_info', manager)
+                            self.mySQL.insertData('fund_managers_info', manager)
                             print (self.getCurrentTime(),'fund_managers_info:',fund_code,manager['manager_name'],manager['url'],manager['manager_id'] )
                         except  Exception as e:
                             print (self.getCurrentTime(),'getFundManagers4', fund_code,fund_url,e )
@@ -273,7 +296,7 @@ class FundSpiders():
 
         return result
 
-    def getFundNav(self,fund_code):
+    def getFundNav(self,fund_code, update=False):
         '''
         获取基金净值数据，因为基金列表中是所有基金代码，一般净值型基金和货币基金数据稍有差异，下面根据数据表格长度判断是一般基金还是货币基金，分别入库
         :param fund_code:
@@ -324,7 +347,12 @@ class FundSpiders():
                 except  Exception as e:
                      print (self.getCurrentTime(),'getFundNav3', fund_code,fund_url,e )
                 try:
-                    mySQL.insertData('fund_nav', result)
+                    # if we update the data of new date, when data exist, break. 
+                    if update:
+                        if self.mySQL.checkData('fund_nav', fund_code, result['the_date']):
+                            print('%s %s exist' %(fund_code, result['the_date']))
+                            break
+                    self.mySQL.insertData('fund_nav', result)
                     print (self.getCurrentTime(),'fund_nav',str(i)+'/'+str(records),result['fund_code'],result['the_date'],result['nav'],result['add_nav'],result['nav_chg_rate'],result['buy_state'],result['sell_state'],result['div_record'] )
                 except  Exception as e:
                     print (self.getCurrentTime(),'getFundNav4', fund_code,fund_url,e )
@@ -343,7 +371,12 @@ class FundSpiders():
                 except  Exception as e:
                      print (self.getCurrentTime(),'getFundNav5', fund_code,fund_url,e )
                 try:
-                    mySQL.insertData('fund_nav_currency', result)
+                    # if we update the data of new date, when data exist, break. 
+                    if update:
+                        if self.mySQL.checkData('fund_nav', fund_code, result['the_date']):
+                            print('%s %s exist' %(fund_code, result['the_date']))
+                            break
+                    self.mySQL.insertData('fund_nav_currency', result)
                     print (self.getCurrentTime(),'fund_nav_currency',str(i)+'/'+str(records),result['fund_code'],result['the_date'],result['profit_per_units'],result['profit_rate'],result['buy_state'],result['sell_state'] )
                 except  Exception as e:
                     print (self.getCurrentTime(),'getFundNav6', fund_code,fund_url,e )
@@ -356,27 +389,12 @@ class FundSpiders():
         return result
 
 
+isproxy = 0  # 如需要使用代理，改为1，并设置代理IP参数 proxy
+proxy = {"http": "http://110.37.84.147:8080", "https": "http://110.37.84.147:8080"}#这里需要替换成可用的代理IP
+header = randHeader()
+sleep_time = 0.1
 
 
-def main():
-    global mySQL, sleep_time, isproxy, proxy, header
-    mySQL = PyMySQL()
-    fundSpiders=FundSpiders()
-    mySQL._init_('localhost', 'root', 'wangxing', 'fund')
-    isproxy = 0  # 如需要使用代理，改为1，并设置代理IP参数 proxy
-    proxy = {"http": "http://110.37.84.147:8080", "https": "http://110.37.84.147:8080"}#这里需要替换成可用的代理IP
-    header = randHeader()
-    sleep_time = 0.1
-    #fundSpiders.getFundJbgk('000001')
-    funds=fundSpiders.getFundCodesFromCsv()
-    #fundSpiders.getFundManagers('000001')
-    for fund in funds:
-         try:
-             fundSpiders.getFundInfo(fund)
-             fundSpiders.getFundManagers(fund)
-             fundSpiders.getFundNav(fund)
-         except Exception as e:
-            print (getCurrentTime(),'main', fund,e )
 
 if __name__ == "__main__":
-    main()
+    pass
