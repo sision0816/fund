@@ -6,41 +6,15 @@
 #############################################################################
 import time
 import random
-import pymysql
+
 import os
 import pandas as pd
 import re
 import matplotlib.pyplot as plt
 import datetime
 from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange
+from database.fundmysql import PyMySQL
 
-
-class PyMySQL:
-    # 获取当前时间
-    def getCurrentTime(self):
-        return time.strftime('[%Y-%m-%d %H:%M:%S]', time.localtime(time.time()))
-    # 数据库初始化
-    def _init_(self, host, user, passwd, db,port=3306,charset='utf8'):
-        pymysql.install_as_MySQLdb()
-        try:
-            self.db =pymysql.connect(host=host,user=user,passwd=passwd,db=db,port=3306,charset='utf8')
-            self.db.ping(True)#使用mysql ping来检查连接,实现超时自动重新连接
-#            print (self.getCurrentTime(), u"MySQL DB Connect Success:",user+'@'+host+':'+str(port)+'/'+db)
-            self.cur = self.db.cursor()
-            self.cur_dict = self.db.cursor(pymysql.cursors.DictCursor)
-        except  Exception as e:
-            print (self.getCurrentTime(), u"MySQL DB Connect Error :%d: %s" % (e.args[0], e.args[1]))
-    # fetch
-    def fetchData(self, sql):
-        # print(table)
-#        print(sql)
-        try:
-            self.cur_dict.execute(sql)
-            results = self.cur_dict.fetchall()
-        except Exception as e:
-            # 发生错误时回滚
-            print (self.getCurrentTime(), u"Data Fetch Failed: %s" % (e))
-        return results
 
 class Manager():
     '''
@@ -61,10 +35,12 @@ class Manager():
 class Fund():
     '''
     '''
-    def __init__(self, fund_code =None, fund_abbr_name =None, **kwargs):
+    def __init__(self, mySQL = None, fund_code =None, fund_abbr_name =None, **kwargs):
+        self.mySQL = mySQL
         self.fund_code = fund_code # 基金代码',
         self.info      = None
         self.nav       = None
+        self.nav_currency       = None
         self.info_dict = {
                         'fund_name'          : '基金全称',
                         'fund_abbr_name'     : '基金简称',
@@ -104,12 +80,32 @@ class Fund():
                         'created_date'     : '创建时间',
                         'updated_date'     : '更新时间',
                         }
+        self.nav_currency_dict = {         
+                        'the_date'         : '净值日期',
+                        'profit_per_units' : '每万份收益',
+                        'profit_rate'      : '7日年化收益率',
+                        'buy_state'        : '申购状态',
+                        'sell_state'       : '赎回状态',
+                        'div_record'       : '分红送配',
+                        'created_date'     : '创建时间',
+                        'updated_date'     : '更新时间',
+                        }
 
         self.set(**kwargs)
 
     def set(self, **kwargs):
             pass
-
+    def getFundCodesFromCsv(self, filename):
+        '''
+        从csv文件中获取基金代码清单（可从wind或者其他财经网站导出）
+        '''
+        file_path=os.path.join(os.getcwd(), filename)
+        fund_code = pd.read_csv(filepath_or_buffer=file_path, sep = '\s+', dtype=str, encoding='utf8')
+        # print(fund_code.columns)
+        # print(fund_code)
+        Code=fund_code.trade_code
+        # print(Code)
+        return Code
     def getFundInfo(self):
         '''
         读取基金信息
@@ -119,8 +115,8 @@ class Fund():
 #        cols = ','.join([str(i) for i in my_key])
         sql = "select *  from %s where fund_code = %s" % (table, self.fund_code)
         try:
-#            self.info = mySQL.fetchData(sql)
-            self.info = pd.read_sql(sql, con = mySQL.db, index_col='fund_code')
+#            self.info = self.mySQL.fetchData(sql)
+            self.info = pd.read_sql(sql, con = self.mySQL.db, index_col='fund_code')
 #            print(self.info)
         except  Exception as e:
             print(e)
@@ -134,12 +130,28 @@ class Fund():
         sql = "select %s  from %s where fund_code = %s" % (cols, table, self.fund_code)
         # sql = "select *  from %s where fund_code = %s" % (table, self.fund_code)
         try:
-            self.nav = pd.read_sql(sql, con = mySQL.db, index_col='the_date')
-            self.nav.index = self.nav.index.str.strip()
-            self.nav[:] = self.nav[:].str.strip()
+            self.nav = pd.read_sql(sql, con = self.mySQL.db, index_col='the_date')
+            # self.nav.index = self.nav.index.str.strip()
+            # self.nav[:] = self.nav[:].str.strip()
             # self.nav = self.nav[-1::]
         except  Exception as e:
-            print(e)
+            print('getFundNav', e)
+    def getFundNavCurrency(self):
+        '''
+        读取历史净值
+        '''
+        table = 'fund_nav_currency'
+        my_key = ['the_date', 'profit_per_units', 'profit_rate', 'buy_state', 'sell_state']
+        cols = ','.join([str(i) for i in my_key])
+        sql = "select %s  from %s where fund_code = %s" % (cols, table, self.fund_code)
+        # sql = "select *  from %s where fund_code = %s" % (table, self.fund_code)
+        try:
+            self.nav_currency = pd.read_sql(sql, con = self.mySQL.db, index_col='the_date')
+            # self.nav.index = self.nav.index.str.strip()
+            # self.nav[:] = self.nav[:].str.strip()
+            # self.nav = self.nav[-1::]
+        except  Exception as e:
+            print('getFundNavCurrency', e)
     def BuySell(self, ):
         #
         buy = []
@@ -177,8 +189,23 @@ class Fund():
         print(self.buy)
         print(self.sell)
         return totalRet;
-    def calcRet(self, begin, end):
+    def calcRet(self, begin=None, end=None, mode = None):
         # calc the return
+        import datetime as DT
+        today = DT.date.today()
+        yestoday = str(today - DT.timedelta(days = 1))
+        week_ago = str(today - DT.timedelta(days = 7))
+        month_ago = str(today - DT.timedelta(days = 30))
+        year_ago = str(today - DT.timedelta(days = 365))
+        if mode == 'week':
+            end = yestoday
+            begin = week_ago
+        if mode == 'month':
+            end = yestoday
+            begin = month_ago
+        if mode == 'year':
+            end = yestoday
+            begin = year_ago
         ret = (self.nav.loc[end]['nav'] - self.nav.loc[begin]['nav'])/self.nav.loc[begin]['nav']
         return ret
 
@@ -199,18 +226,15 @@ class Fund():
         print('\n\n')
         # self.printNav(5)
     def plotNav(self, ):
-        import datetime
-        from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange
         fig, ax = plt.subplots()
         ax.plot_date(self.nav.index, self.nav['nav'], '-')
         ax.set_xlim(pd.Timestamp(self.nav.index[0]), pd.Timestamp(self.nav.index[-1]))
-        ax.plot_date(self.buy.index, self.buy['nav'], 'rs')
         plt.show()
-        return 0    
+        return 0     
     def plotStrategy(self, ):
         fig, ax = plt.subplots()
         ax.plot_date(self.nav.index, self.nav['nav'], '-')
-        ax.set_xlim(pd.Timestamp(self.nav.index[0]), pd.Timestamp(self.nav.index[100]))
+        ax.set_xlim(pd.Timestamp(self.nav.index[0]), pd.Timestamp(self.nav.index[-1]))
         ax.plot_date(self.buy.index, self.buy['nav'], 'gs')
         ax.plot_date(self.sell.index, self.sell['nav'], 'rs')
         plt.show()
@@ -225,24 +249,5 @@ class Fund():
                 text += '    ' + str(self.nav.iloc[i][j])
             print(text)
 
-
-
-
-def main():
-    global mySQL
-    mySQL = PyMySQL()
-    mySQL._init_('localhost', 'root', 'wangxing', 'fund')
-    myfund=Fund(fund_code = '000001')
-    myfund.getFundInfo()
-    myfund.getFundNav()
-    myfund.printFundInfo()
-    print(myfund.calcRet('2016-12-29', '2017-08-09'))
-    # ret = myfund.BuySell()
-    # print(ret)
-    # myfund.plotNav()
-    # myfund.plotStrategy()
-
-
-
 if __name__ == "__main__":
-    main()
+    pass

@@ -80,7 +80,6 @@ CREATE TABLE IF NOT EXISTS  `fund_nav_currency` (
   `buy_state` varchar(255) DEFAULT NULL,
   `sell_state` varchar(255) DEFAULT NULL,
   `div_record` varchar(255) DEFAULT NULL,
-
   `created_date` datetime DEFAULT NULL,
   `updated_date` datetime DEFAULT NULL,
   PRIMARY KEY (`the_date`,`fund_code`)
